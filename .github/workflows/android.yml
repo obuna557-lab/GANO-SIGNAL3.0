@@ -1,35 +1,51 @@
 name: GANO SIGNAL APK Build
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+workflow_dispatch:
+push:
+branches:
+- main
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+build:
+runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+steps:  
+  - name: Checkout  
+    uses: actions/checkout@v4  
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+  - name: Find and extract project ZIP  
+    run: |  
+      ZIP=$(find . -maxdepth 1 -name 'GANO-SIGNAL-GITHUB-READY*.zip' | head -n 1)  
+      if [ -z "$ZIP" ]; then  
+        echo "Project ZIP not found!"  
+        exit 1  
+      fi  
+      mkdir -p source  
+      unzip -q "$ZIP" -d source  
+      SETTINGS=$(find source -type f -name settings.gradle -o -name settings.gradle.kts | head -n 1)  
+      if [ -z "$SETTINGS" ]; then  
+        echo "settings.gradle not found in ZIP!"  
+        exit 1  
+      fi  
+      echo "PROJECT_DIR=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"  
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.3.1'
+  - name: Setup Java  
+    uses: actions/setup-java@v4  
+    with:  
+      distribution: temurin  
+      java-version: '17'  
 
-      - name: Build APK
-        run: gradle assembleDebug
+  - name: Setup Gradle  
+    uses: gradle/actions/setup-gradle@v4  
+    with:  
+      gradle-version: '9.3.1'  
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: GANO-SIGNAL-APK
-          path: app/build/outputs/apk/debug/*.apk
+  - name: Build APK  
+    run: gradle -p "$PROJECT_DIR" assembleDebug  
+
+  - name: Upload APK  
+    uses: actions/upload-artifact@v4  
+    with:  
+      name: GANO-SIGNAL-APK  
+      path: source/**/app/build/outputs/apk/debug/*.apk
