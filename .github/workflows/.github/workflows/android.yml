@@ -1,0 +1,113 @@
+
+name: GANO SIGNAL APK Builder
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  android-build:
+    name: Build GANO SIGNAL
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Locate Android project
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p extracted
+
+          SETTINGS=$(find . -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -not -path './.git/*' \
+            -not -path './extracted/*' \
+            | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "Android project not found in repository."
+
+            FOUND=""
+            while IFS= read -r ZIP; do
+              DEST="extracted/$(basename "$ZIP" .zip)"
+              mkdir -p "$DEST"
+              unzip -oq "$ZIP" -d "$DEST"
+
+              FOUND=$(find "$DEST" -type f \
+                \( -name settings.gradle -o -name settings.gradle.kts \) \
+                | head -n 1)
+
+              if [ -n "$FOUND" ]; then
+                SETTINGS="$FOUND"
+                break
+              fi
+            done < <(find . -maxdepth 1 -type f -iname '*.zip')
+
+          fi
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: Android settings.gradle not found!"
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERROR: app module not found!"
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Project found: $PROJECT_DIR"
+
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build Debug APK
+        run: |
+          gradle -p "$PROJECT_DIR" \
+            --no-daemon \
+            --stacktrace \
+            assembleDebug
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -e
+          APK=$(find "$PROJECT_DIR/app/build/outputs/apk/debug" \
+            -type f -name '*.apk' | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not generated!"
+            exit 1
+          fi
+
+          mkdir -p output
+          cp "$APK" output/GANO-SIGNAL.apk
+          ls -lh output/GANO-SIGNAL.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GANO-SIGNAL-APK
+          path: output/GANO-SIGNAL.apk
+          if-no-files-found: error
+          retention-days: 14
